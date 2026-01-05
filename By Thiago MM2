@@ -1,0 +1,299 @@
+-- SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local lp = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+--==================================================
+-- ESTADOS
+local ESP, AIMGUN, INFJUMP, NOCLIP, SPEED = false,false,false,false,false
+local speedValue = 16
+
+--==================================================
+-- CHARACTER
+local char, hum, hrp
+local function resetStates()
+	AIMGUN = false
+	INFJUMP = false
+	NOCLIP = false
+	SPEED = false
+	if hum then hum.WalkSpeed = 16 end
+end
+local function loadChar(c)
+	char = c
+	hum = c:WaitForChild("Humanoid")
+	hrp = c:WaitForChild("HumanoidRootPart")
+	resetStates()
+end
+loadChar(lp.Character or lp.CharacterAdded:Wait())
+lp.CharacterAdded:Connect(loadChar)
+
+--==================================================
+-- GUI
+local gui = Instance.new("ScreenGui", lp.PlayerGui)
+gui.Name = "By Thiago"
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.fromOffset(340,500)
+frame.Position = UDim2.fromOffset(80,80)
+frame.BackgroundColor3 = Color3.fromRGB(18,18,18)
+frame.BorderSizePixel = 0
+frame.Active = true
+Instance.new("UICorner",frame).CornerRadius = UDim.new(0,12)
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1,0,0,40)
+title.Text = "By Thiago"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.new(1,1,1)
+title.BackgroundColor3 = Color3.fromRGB(28,28,28)
+title.BorderSizePixel = 0
+
+--==================================================
+-- DRAG
+local dragging, dragStart, startPos
+title.InputBegan:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = i.Position
+		startPos = frame.Position
+	end
+end)
+UIS.InputChanged:Connect(function(i)
+	if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+		local d = i.Position - dragStart
+		frame.Position = UDim2.fromOffset(startPos.X.Offset + d.X, startPos.Y.Offset + d.Y)
+	end
+end)
+UIS.InputEnded:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+
+--==================================================
+-- MINIMIZAR / FECHAR
+local buttons = {}
+local minimized = false
+local oldSize = frame.Size
+
+local minBtn = Instance.new("TextButton", frame)
+minBtn.Size = UDim2.fromOffset(36,26)
+minBtn.Position = UDim2.fromOffset(300,7)
+minBtn.Text = "-"
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 18
+minBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+minBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner",minBtn).CornerRadius=UDim.new(0,6)
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	for _,b in pairs(buttons) do b.Visible = not minimized end
+	TweenService:Create(frame,TweenInfo.new(0.25),{
+		Size = minimized and UDim2.fromOffset(340,40) or oldSize
+	}):Play()
+	minBtn.Text = minimized and "+" or "-"
+end)
+
+local closeBtn = Instance.new("TextButton", frame)
+closeBtn.Size = UDim2.fromOffset(36,26)
+closeBtn.Position = UDim2.fromOffset(260,7)
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 18
+closeBtn.BackgroundColor3 = Color3.fromRGB(200,0,0)
+closeBtn.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner",closeBtn).CornerRadius=UDim.new(0,6)
+closeBtn.MouseButton1Click:Connect(function()
+	gui:Destroy()
+end)
+
+--==================================================
+-- BOTÕES
+local function mkBtn(txt,y)
+	local b = Instance.new("TextButton", frame)
+	b.Size = UDim2.new(1,-20,0,32)
+	b.Position = UDim2.fromOffset(10,y)
+	b.Text = txt.." OFF"
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	b.TextColor3 = Color3.new(1,1,1)
+	b.BorderSizePixel = 0
+	Instance.new("UICorner",b).CornerRadius = UDim.new(0,6)
+	table.insert(buttons,b)
+	return b
+end
+local function toggle(btn,name,state)
+	btn.Text = name..(state and " ON" or " OFF")
+	btn.BackgroundColor3 = state and Color3.fromRGB(0,150,0) or Color3.fromRGB(150,0,0)
+end
+
+local espBtn    = mkBtn("ESP",50)
+local aimBtn    = mkBtn("AIMBOT GUN",90)
+local speedBtn  = mkBtn("SPEED",130)
+local speedPlus = mkBtn("+ SPEED",170)
+local speedMinus= mkBtn("- SPEED",210)
+local jumpBtn   = mkBtn("INF JUMP",250)
+local noclipBtn = mkBtn("NOCLIP",290)
+
+--==================================================
+-- TOOLS
+local function hasTool(plr,name)
+	if not plr.Character then return false end
+	return plr.Character:FindFirstChild(name) or (plr.Backpack and plr.Backpack:FindFirstChild(name))
+end
+local function getTool(name)
+	for _,t in pairs(char:GetChildren()) do
+		if t:IsA("Tool") and t.Name==name then return t end
+	end
+end
+
+--==================================================
+-- ESP (CORRIGIDO)
+local espCache = {}
+local COLORS = {
+	Murderer = Color3.fromRGB(255,0,0),
+	Sheriff  = Color3.fromRGB(0,170,255),
+	Innocent = Color3.fromRGB(0,255,0)
+}
+local function getRoleColor(plr)
+	return hasTool(plr,"Knife") and COLORS.Murderer
+		or hasTool(plr,"Gun") and COLORS.Sheriff
+		or COLORS.Innocent
+end
+local function createESP(plr)
+	if espCache[plr] or not plr.Character or plr==lp then return end
+	local h = Instance.new("Highlight")
+	h.Adornee = plr.Character
+	h.FillTransparency = 0.45
+	h.OutlineColor = Color3.new(1,1,1)
+	h.FillColor = getRoleColor(plr)
+	h.Parent = plr.Character
+	espCache[plr] = h
+end
+local function removeESP(plr)
+	if espCache[plr] then espCache[plr]:Destroy() espCache[plr]=nil end
+end
+local function enableESP()
+	for _,plr in pairs(Players:GetPlayers()) do createESP(plr) end
+end
+local function disableESP()
+	for plr,_ in pairs(espCache) do removeESP(plr) end
+end
+RunService.Heartbeat:Connect(function()
+	if not ESP then return end
+	for plr,h in pairs(espCache) do
+		if plr.Character then h.FillColor = getRoleColor(plr) end
+	end
+end)
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function()
+		if ESP then task.wait(0.2) createESP(plr) end
+	end)
+end)
+espBtn.MouseButton1Click:Connect(function()
+	ESP = not ESP
+	toggle(espBtn,"ESP",ESP)
+	if ESP then enableESP() else disableESP() end
+end)
+
+--==================================================
+-- AIMBOT GUN + BOTÃO ATIRAR
+local shootBtn = Instance.new("TextButton", gui)
+shootBtn.Size = UDim2.fromOffset(110,45)
+shootBtn.Position = UDim2.fromScale(0.85,0.55)
+shootBtn.Text = "ATIRAR"
+shootBtn.Visible = false
+shootBtn.Active = true
+shootBtn.Font = Enum.Font.GothamBold
+shootBtn.TextSize = 16
+shootBtn.TextColor3 = Color3.new(1,1,1)
+shootBtn.BackgroundColor3 = Color3.fromRGB(200,0,0)
+Instance.new("UICorner",shootBtn).CornerRadius = UDim.new(0,10)
+
+local sDragging, sDragStart, sStartPos
+shootBtn.InputBegan:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then
+		sDragging = true
+		sDragStart = i.Position
+		sStartPos = shootBtn.Position
+	end
+end)
+UIS.InputChanged:Connect(function(i)
+	if sDragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+		local d = i.Position - sDragStart
+		shootBtn.Position = UDim2.fromOffset(sStartPos.X.Offset + d.X, sStartPos.Y.Offset + d.Y)
+	end
+end)
+UIS.InputEnded:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then sDragging = false end
+end)
+
+aimBtn.MouseButton1Click:Connect(function()
+	AIMGUN = not AIMGUN
+	toggle(aimBtn,"AIMBOT GUN",AIMGUN)
+end)
+
+RunService.RenderStepped:Connect(function()
+	shootBtn.Visible = AIMGUN and getTool("Gun") ~= nil
+end)
+
+local function getMurdererHead()
+	for _,plr in pairs(Players:GetPlayers()) do
+		if plr ~= lp and hasTool(plr,"Knife") and plr.Character then
+			return plr.Character:FindFirstChild("Head")
+		end
+	end
+end
+
+shootBtn.MouseButton1Click:Connect(function()
+	local head = getMurdererHead()
+	if not head then return end
+	cam.CFrame = CFrame.new(cam.CFrame.Position, head.Position)
+	local gun = getTool("Gun")
+	if gun then gun:Activate() end
+end)
+
+--==================================================
+-- SPEED
+speedBtn.MouseButton1Click:Connect(function()
+	SPEED = not SPEED
+	hum.WalkSpeed = SPEED and speedValue or 16
+	toggle(speedBtn,"SPEED",SPEED)
+end)
+speedPlus.MouseButton1Click:Connect(function()
+	speedValue = math.clamp(speedValue+5,16,100)
+	if SPEED then hum.WalkSpeed = speedValue end
+end)
+speedMinus.MouseButton1Click:Connect(function()
+	speedValue = math.clamp(speedValue-5,16,100)
+	if SPEED then hum.WalkSpeed = speedValue end
+end)
+
+--==================================================
+-- INF JUMP
+jumpBtn.MouseButton1Click:Connect(function()
+	INFJUMP = not INFJUMP
+	toggle(jumpBtn,"INF JUMP",INFJUMP)
+end)
+UIS.JumpRequest:Connect(function()
+	if INFJUMP then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+end)
+
+--==================================================
+-- NOCLIP
+noclipBtn.MouseButton1Click:Connect(function()
+	NOCLIP = not NOCLIP
+	toggle(noclipBtn,"NOCLIP",NOCLIP)
+end)
+RunService.Stepped:Connect(function()
+	if NOCLIP then
+		for _,p in pairs(char:GetDescendants()) do
+			if p:IsA("BasePart") then p.CanCollide = false end
+		end
+	end
+end)
